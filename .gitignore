@@ -1,0 +1,19 @@
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Training/export artifacts
+mobile_convert/runs/
+*.ckpt
+*.pth
+*.onnx
+*.ort
+*.pt
+*.bin
+
+# Optional local outputs
+*.parity.json
+*.convert.json
+benchmark*.json
+xla_metrics.txt

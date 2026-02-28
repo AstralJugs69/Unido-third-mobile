@@ -1,0 +1,8 @@
+runtime:
+  mode: xla
+  use_bf16: true
+  xla_world_size: 8
+training:
+  num_workers: 4
+  batch_size: 2
+  grad_accum: 4

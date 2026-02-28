@@ -1,0 +1,59 @@
+data:
+  train_csv: Data/Train.csv
+  test_csv: Data/Test.csv
+  image_dir: Data/images/images
+  output_root: mobile_convert/runs
+  val_split: 0.15
+
+model:
+  name: convnext_small.fb_in22k_ft_in1k_384
+  count_cols: [Count, Broken_Count, Long_Count, Medium_Count, Black_Count, Chalky_Count, Red_Count, Yellow_Count, Green_Count]
+  measure_cols: [WK_Length_Average, WK_Width_Average, WK_LW_Ratio_Average, Average_L, Average_a, Average_b]
+  scale: 100.0
+
+tiling:
+  tile_size: 256
+  grid_rows: 6
+  grid_cols: 8
+
+training:
+  seed: 42
+  epochs: 12
+  warmup_head_epochs: 2
+  batch_size: 2
+  grad_accum: 2
+  num_workers: 2
+  checkpoint: null
+  teacher_checkpoint: ultimate_tiled_multitask.pth
+  use_uncertainty_weighting: true
+  use_gradnorm: false
+
+optimizer:
+  lr: 4.0e-5
+  weight_decay: 0.05
+
+scheduler:
+  t_max: 12
+
+runtime:
+  mode: auto
+  use_bf16: true
+  xla_world_size: 8
+
+export:
+  opset: 17
+  dynamic_batch: true
+
+benchmark:
+  warmup_runs: 8
+  timed_runs: 30
+  intra_op_threads: 1
+  inter_op_threads: 1
+  batch_size: 1
+
+gates:
+  global_rel_deg_max: 0.015
+  per_target_rel_deg_max: 0.05
+
+artifacts:
+  run_name: default
