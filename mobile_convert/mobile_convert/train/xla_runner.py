@@ -36,6 +36,30 @@ def _dump_xla_metrics(run_dir: Path) -> None:
         pass
 
 
+def _xla_mp_worker(_index: int, cfg_local: dict, run_dir_str: str, result_file_str: str):
+    import torch_xla.core.xla_model as xm  # type: ignore
+
+    device = xm.xla_device()
+    rank = xm.get_ordinal()
+    world_size = xm.xrt_world_size()
+    is_master = xm.is_master_ordinal()
+
+    result = train_main(
+        cfg_local,
+        Path(run_dir_str),
+        device,
+        rank=rank,
+        world_size=world_size,
+        is_master=is_master,
+        distributed=True,
+    )
+
+    xm.rendezvous("train_main_done")
+    if is_master:
+        Path(result_file_str).write_text(json.dumps(result, indent=2), encoding="utf-8")
+        _dump_xla_metrics(Path(run_dir_str))
+
+
 def _run_xla_spawn(cfg: dict, run_dir: Path):
     try:
         import torch_xla.core.xla_model as xm  # type: ignore
@@ -46,27 +70,6 @@ def _run_xla_spawn(cfg: dict, run_dir: Path):
         return train_main(cfg, run_dir, device)
 
     result_file = run_dir / "xla_train_result.json"
-
-    def _mp_worker(_index: int, cfg_local: dict, run_dir_str: str, result_file_str: str):
-        device = xm.xla_device()
-        rank = xm.get_ordinal()
-        world_size = xm.xrt_world_size()
-        is_master = xm.is_master_ordinal()
-
-        result = train_main(
-            cfg_local,
-            Path(run_dir_str),
-            device,
-            rank=rank,
-            world_size=world_size,
-            is_master=is_master,
-            distributed=True,
-        )
-
-        xm.rendezvous("train_main_done")
-        if is_master:
-            Path(result_file_str).write_text(json.dumps(result, indent=2), encoding="utf-8")
-            _dump_xla_metrics(Path(run_dir_str))
 
     requested_world_size = cfg.get("runtime", {}).get("xla_world_size", None)
     if requested_world_size is not None:
@@ -79,7 +82,7 @@ def _run_xla_spawn(cfg: dict, run_dir: Path):
         except Exception:
             logging.warning("Invalid runtime.xla_world_size=%s; using default TPU device count.", requested_world_size)
 
-    xmp.spawn(_mp_worker, args=(cfg, str(run_dir), str(result_file)), nprocs=None, start_method="fork")
+    xmp.spawn(_xla_mp_worker, args=(cfg, str(run_dir), str(result_file)), nprocs=None, start_method="fork")
 
     if result_file.exists():
         return json.loads(result_file.read_text(encoding="utf-8"))
