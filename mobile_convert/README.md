@@ -15,15 +15,18 @@ Use TPU v5e-8 runtime in Kaggle before running these cells.
 ### Cell 1: sync repo + install
 ```bash
 %cd /kaggle/working
-# If repo is already copied into /kaggle/working, skip clone and just cd into it.
-# !git clone <YOUR_REPO_URL> Unido_third_mobile
-%cd /kaggle/working/Unido_third_mobile
+!if [ -d Unido-third-mobile ]; then \
+  cd Unido-third-mobile && git pull origin master; \
+else \
+  git clone https://github.com/AstralJugs69/Unido-third-mobile.git; \
+fi
+%cd /kaggle/working/Unido-third-mobile
 !bash mobile_convert/scripts/kaggle_bootstrap.sh
 ```
 
 ### Cell 2: run full core pipeline
 ```bash
-%cd /kaggle/working/Unido_third_mobile
+%cd /kaggle/working/Unido-third-mobile
 # Optional tuning: set TPU process count. Usually keep at 8 for v5e-8.
 %env XLA_WORLD_SIZE=8
 !bash mobile_convert/scripts/kaggle_train_export.sh
