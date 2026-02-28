@@ -19,9 +19,14 @@ def save_checkpoint(path: str | Path, model: torch.nn.Module, optimizer: torch.o
     )
 
 
-def load_warmstart(model: torch.nn.Module, checkpoint_path: str) -> None:
+def load_warmstart(model: torch.nn.Module, checkpoint_path: str) -> bool:
+    if not Path(checkpoint_path).exists():
+        logging.warning("Warm-start checkpoint not found: %s. Training will continue without warm-start.", checkpoint_path)
+        return False
+
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state = ckpt.get("model", ckpt)
     missing, unexpected = model.load_state_dict(state, strict=False)
     logging.info("Warm-start loaded from %s", checkpoint_path)
     logging.info("Missing keys: %d | Unexpected keys: %d", len(missing), len(unexpected))
+    return True

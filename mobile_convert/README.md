@@ -30,6 +30,8 @@ fi
 !bash mobile_convert/scripts/kaggle_train_export.sh
 ```
 
+`kaggle_train_export.sh` will automatically download the teacher checkpoint and image dataset if they are missing.
+
 ### Optional: pass extra overrides in cell 2
 ```bash
 !bash mobile_convert/scripts/kaggle_train_export.sh \
