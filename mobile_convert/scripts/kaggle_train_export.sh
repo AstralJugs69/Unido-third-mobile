@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 XLA_WORLD_SIZE="${XLA_WORLD_SIZE:-8}"
