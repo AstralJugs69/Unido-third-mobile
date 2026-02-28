@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 from pathlib import Path
 
 import torch
@@ -67,8 +68,18 @@ def _run_xla_spawn(cfg: dict, run_dir: Path):
             Path(result_file_str).write_text(json.dumps(result, indent=2), encoding="utf-8")
             _dump_xla_metrics(Path(run_dir_str))
 
-    nprocs = int(cfg.get("runtime", {}).get("xla_world_size", 8))
-    xmp.spawn(_mp_worker, args=(cfg, str(run_dir), str(result_file)), nprocs=nprocs, start_method="fork")
+    requested_world_size = cfg.get("runtime", {}).get("xla_world_size", None)
+    if requested_world_size is not None:
+        try:
+            ws = int(requested_world_size)
+            if ws > 0:
+                # PJRT requires nprocs=None and uses env vars to cap device count.
+                os.environ["TPU_NUM_DEVICES"] = str(ws)
+                logging.info("Set TPU_NUM_DEVICES=%s", ws)
+        except Exception:
+            logging.warning("Invalid runtime.xla_world_size=%s; using default TPU device count.", requested_world_size)
+
+    xmp.spawn(_mp_worker, args=(cfg, str(run_dir), str(result_file)), nprocs=None, start_method="fork")
 
     if result_file.exists():
         return json.loads(result_file.read_text(encoding="utf-8"))
