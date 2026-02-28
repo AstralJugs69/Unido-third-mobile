@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 from pathlib import Path
 
 import torch
@@ -71,17 +70,8 @@ def _run_xla_spawn(cfg: dict, run_dir: Path):
 
     result_file = run_dir / "xla_train_result.json"
 
-    requested_world_size = cfg.get("runtime", {}).get("xla_world_size", None)
-    if requested_world_size is not None:
-        try:
-            ws = int(requested_world_size)
-            if ws > 0:
-                # PJRT requires nprocs=None and uses env vars to cap device count.
-                os.environ["TPU_NUM_DEVICES"] = str(ws)
-                logging.info("Set TPU_NUM_DEVICES=%s", ws)
-        except Exception:
-            logging.warning("Invalid runtime.xla_world_size=%s; using default TPU device count.", requested_world_size)
-
+    # Under PJRT in managed notebook environments (e.g. Kaggle), forcing device
+    # count via env vars can break TPU initialization. Let PJRT discover devices.
     xmp.spawn(_xla_mp_worker, args=(cfg, str(run_dir), str(result_file)), nprocs=None, start_method="fork")
 
     if result_file.exists():
