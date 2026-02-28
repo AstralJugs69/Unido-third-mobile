@@ -39,6 +39,7 @@ runtime:
   mode: auto
   use_bf16: true
   xla_world_size: 8
+  use_xla_spawn: true
 
 export:
   opset: 17

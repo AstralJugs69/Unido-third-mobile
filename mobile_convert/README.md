@@ -27,8 +27,6 @@ fi
 ### Cell 2: run full core pipeline
 ```bash
 %cd /kaggle/working/Unido-third-mobile
-# Optional tuning: set TPU process count. Usually keep at 8 for v5e-8.
-%env XLA_WORLD_SIZE=8
 !bash mobile_convert/scripts/kaggle_train_export.sh
 ```
 
@@ -55,4 +53,5 @@ python -m mobile_convert.cli run-core --config mobile_convert/mobile_convert/con
 
 - Core scope includes: warm-start student training, eval gates, ONNX FP32/FP16, ORT benchmark.
 - `quantize-int8` is intentionally a stub in this phase.
-- XLA spawn is used when `runtime.mode=xla`, with safe fallback to CUDA/CPU when XLA is unavailable.
+- Kaggle preset uses single-process XLA (`use_xla_spawn: false`) for compatibility with PJRT TPU initialization.
+- XLA spawn remains available in config for environments where PJRT multiprocess is stable.

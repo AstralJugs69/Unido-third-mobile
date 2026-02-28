@@ -83,8 +83,20 @@ def _run_xla_spawn(cfg: dict, run_dir: Path):
 def run_training(cfg: dict, run_dir):
     mode = cfg.get("runtime", {}).get("mode", "auto").lower()
     if mode == "xla":
-        logging.info("Using XLA spawn mode")
-        return _run_xla_spawn(cfg, Path(run_dir))
+        use_spawn = bool(cfg.get("runtime", {}).get("use_xla_spawn", True))
+        if use_spawn:
+            logging.info("Using XLA spawn mode")
+            try:
+                return _run_xla_spawn(cfg, Path(run_dir))
+            except Exception as exc:
+                logging.warning("XLA spawn failed (%s). Falling back to single-process XLA.", exc)
+
+        device = resolve_device("xla")
+        logging.info("Using single-process XLA mode on device: %s", device)
+        result = train_main(cfg, Path(run_dir), device, distributed=False)
+        if device.type == "xla":
+            _dump_xla_metrics(Path(run_dir))
+        return result
 
     device = resolve_device(mode)
     logging.info("Using device: %s", device)

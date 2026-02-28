@@ -1,7 +1,7 @@
 runtime:
   mode: xla
   use_bf16: true
-  xla_world_size: 8
+  use_xla_spawn: false
 training:
   num_workers: 4
   batch_size: 2
