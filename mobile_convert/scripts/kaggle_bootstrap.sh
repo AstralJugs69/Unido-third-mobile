@@ -16,15 +16,18 @@ pip install -q tensorflow-cpu >/dev/null 2>&1 || true
 # Keep CPU ORT on TPU/CPU runtimes.
 if command -v nvidia-smi >/dev/null 2>&1; then
   echo "[mobile_convert] GPU detected. Installing onnxruntime-gpu..."
-  pip uninstall -y onnxruntime >/dev/null 2>&1 || true
+  pip uninstall -y onnxruntime onnxruntime-gpu >/dev/null 2>&1 || true
   pip install -q --upgrade onnxruntime-gpu
 else
   echo "[mobile_convert] No GPU detected. Installing CPU onnxruntime..."
-  pip uninstall -y onnxruntime-gpu >/dev/null 2>&1 || true
+  pip uninstall -y onnxruntime onnxruntime-gpu >/dev/null 2>&1 || true
   pip install -q --upgrade onnxruntime
 fi
 
 python - <<'PY'
 import onnxruntime as ort
-print("[mobile_convert] ONNX Runtime providers:", ort.get_available_providers())
+providers_fn = getattr(ort, "get_available_providers", None)
+providers = providers_fn() if callable(providers_fn) else ["CPUExecutionProvider"]
+print("[mobile_convert] ONNX Runtime providers:", providers)
+print("[mobile_convert] InferenceSession available:", hasattr(ort, "InferenceSession"))
 PY

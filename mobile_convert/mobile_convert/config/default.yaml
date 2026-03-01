@@ -47,7 +47,7 @@ runtime:
   xla_spawn_start_method: spawn
 
 export:
-  opset: 17
+  opset: 18
   dynamic_batch: true
 
 benchmark:
