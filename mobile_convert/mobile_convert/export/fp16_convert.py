@@ -13,6 +13,7 @@ def convert_to_fp16(in_path: str, out_path: str) -> dict:
     # Keep numerically sensitive reduction/normalization ops in FP32 to avoid
     # overflow/Inf drift in aggregated count outputs.
     op_block_list = [
+        "Resize",
         "ReduceSum",
         "ReduceMean",
         "GlobalAveragePool",
