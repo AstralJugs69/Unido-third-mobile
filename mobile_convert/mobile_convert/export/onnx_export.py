@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +10,54 @@ import torch
 
 from mobile_convert.models.architecture import OnnxTileModel, UltimateSpecialist
 from mobile_convert.utils.io import write_json
+
+
+def _export_with_dynamo(
+    wrapped: OnnxTileModel,
+    stack: torch.Tensor,
+    meta: torch.Tensor,
+    out_path: str,
+    opset: int,
+    dynamic_batch: bool,
+) -> None:
+    kwargs = dict(
+        input_names=["stack", "meta"],
+        output_names=["counts", "measures"],
+        opset_version=opset,
+        dynamo=True,
+    )
+    if dynamic_batch:
+        # Preferred shape specification for dynamo exporter.
+        kwargs["dynamic_shapes"] = {
+            "stack": {0: torch.export.Dim("batch")},
+            "meta": {0: torch.export.Dim("batch")},
+        }
+    torch.onnx.export(wrapped, (stack, meta), out_path, **kwargs)
+
+
+def _export_with_legacy(
+    wrapped: OnnxTileModel,
+    stack: torch.Tensor,
+    meta: torch.Tensor,
+    out_path: str,
+    opset: int,
+    dynamic_batch: bool,
+) -> None:
+    dynamic_axes = (
+        {"stack": {0: "batch"}, "meta": {0: "batch"}, "counts": {0: "batch"}, "measures": {0: "batch"}}
+        if dynamic_batch
+        else None
+    )
+    torch.onnx.export(
+        wrapped,
+        (stack, meta),
+        out_path,
+        input_names=["stack", "meta"],
+        output_names=["counts", "measures"],
+        dynamic_axes=dynamic_axes,
+        opset_version=opset,
+        dynamo=False,
+    )
 
 
 def export_fp32_onnx(cfg: dict, ckpt_path: str, out_path: str) -> dict:
@@ -26,18 +75,14 @@ def export_fp32_onnx(cfg: dict, ckpt_path: str, out_path: str) -> dict:
     meta = torch.zeros(1, 3, dtype=torch.float32)
     meta[0, 1] = 1.0
 
-    dynamic_axes = {"stack": {0: "batch"}, "meta": {0: "batch"}, "counts": {0: "batch"}, "measures": {0: "batch"}} if cfg["export"].get("dynamic_batch", True) else None
+    opset = int(cfg["export"]["opset"])
+    dynamic_batch = bool(cfg["export"].get("dynamic_batch", True))
 
-    torch.onnx.export(
-        wrapped,
-        (stack, meta),
-        out_path,
-        input_names=["stack", "meta"],
-        output_names=["counts", "measures"],
-        dynamic_axes=dynamic_axes,
-        opset_version=int(cfg["export"]["opset"]),
-        dynamo=True,
-    )
+    try:
+        _export_with_dynamo(wrapped, stack, meta, out_path, opset, dynamic_batch)
+    except Exception as exc:
+        logging.warning("Dynamo ONNX export failed (%s). Falling back to legacy exporter.", exc)
+        _export_with_legacy(wrapped, stack, meta, out_path, opset, dynamic_batch)
 
     model_onnx = onnx.load(out_path)
     onnx.checker.check_model(model_onnx)
