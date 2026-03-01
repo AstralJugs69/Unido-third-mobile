@@ -77,6 +77,30 @@ def cmd_convert_fp16(args) -> int:
     return 0
 
 
+def cmd_convert_fp16_mixed(args) -> int:
+    from mobile_convert.export.fp16_convert import build_calibration_feed, convert_to_fp16_mixed
+    from mobile_convert.utils.io import load_config
+
+    cfg = load_config(args.config, args.preset, args.set_values)
+    feed = build_calibration_feed(
+        image_path=args.image,
+        tile_size=int(cfg["tiling"]["tile_size"]),
+        grid_rows=int(cfg["tiling"]["grid_rows"]),
+        grid_cols=int(cfg["tiling"]["grid_cols"]),
+        rice_comment=args.comment,
+    )
+    report = convert_to_fp16_mixed(
+        in_path=args.input,
+        out_path=args.out,
+        feed_dict=feed,
+        rtol=float(args.rtol),
+        atol=float(args.atol),
+        keep_io_types=not bool(args.no_keep_io_types),
+    )
+    logging.info("Mixed FP16 conversion done: %s", report["output"])
+    return 0
+
+
 def cmd_benchmark(args) -> int:
     from mobile_convert.bench.ort_bench import benchmark_and_save
 
@@ -155,6 +179,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_fp16.add_argument("--in", dest="input", required=True)
     p_fp16.add_argument("--out", required=True)
     p_fp16.set_defaults(func=cmd_convert_fp16)
+
+    p_fp16m = sub.add_parser("convert-fp16-mixed")
+    p_fp16m.add_argument("--in", dest="input", required=True)
+    p_fp16m.add_argument("--out", required=True)
+    p_fp16m.add_argument("--config", required=True)
+    p_fp16m.add_argument("--preset", default=None)
+    p_fp16m.add_argument("--set", dest="set_values", action="append", default=[])
+    p_fp16m.add_argument("--image", required=True, help="Calibration image path")
+    p_fp16m.add_argument("--comment", default="White", help="Rice comment/meta class: Paddy|White|Brown")
+    p_fp16m.add_argument("--rtol", type=float, default=0.01)
+    p_fp16m.add_argument("--atol", type=float, default=0.001)
+    p_fp16m.add_argument("--no-keep-io-types", action="store_true")
+    p_fp16m.set_defaults(func=cmd_convert_fp16_mixed)
 
     p_bench = sub.add_parser("benchmark-ort")
     _add_common_args(p_bench)
