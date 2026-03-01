@@ -27,7 +27,7 @@ class RiceDataset(Dataset):
         require_targets: bool = True,
     ) -> None:
         self.df = df.reset_index(drop=True)
-        self.image_dir = Path(image_dir)
+        self.image_dir = self._resolve_image_dir(Path(image_dir))
         self.grid_rows = grid_rows
         self.grid_cols = grid_cols
         self.measure_stats = measure_stats
@@ -46,6 +46,27 @@ class RiceDataset(Dataset):
             )
         else:
             self.transform = A.Compose([A.Resize(tile_size, tile_size), A.Normalize(), ToTensorV2()])
+
+    @staticmethod
+    def _resolve_image_dir(image_dir: Path) -> Path:
+        if image_dir.is_absolute() and image_dir.exists():
+            return image_dir
+
+        if image_dir.exists():
+            return image_dir.resolve()
+
+        # Resolve relative paths against likely project roots so notebook CWD does not matter.
+        candidates = []
+        for parent in Path(__file__).resolve().parents:
+            if (parent / ".git").exists() or (parent / "Data").exists():
+                candidates.append(parent / image_dir)
+
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate.resolve()
+
+        # Keep original behavior if nothing matched; __getitem__ will raise a clear FileNotFoundError.
+        return image_dir
 
     def __len__(self) -> int:
         return len(self.df)
