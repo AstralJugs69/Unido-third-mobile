@@ -55,8 +55,6 @@ bash mobile_convert/scripts/kaggle_train_export.sh \
 ```bash
 %cd /kaggle/working/Unido-third-mobile
 !bash mobile_convert/scripts/kaggle_train_export.sh \
-  --set runtime.use_xla_spawn=true \
-  --set runtime.xla_spawn_start_method=spawn \
   --set training.batch_size=3 \
   --set training.grad_accum=1 \
   --set training.num_workers=8
@@ -77,4 +75,5 @@ python -m mobile_convert.cli run-core --config mobile_convert/mobile_convert/con
 
 - Core scope includes: warm-start student training, eval gates, ONNX FP32/FP16, ORT benchmark.
 - `quantize-int8` is intentionally a stub in this phase.
-- Kaggle preset enables XLA spawn with automatic fallback to single-process XLA if spawn initialization fails.
+- Kaggle preset uses single-process XLA by default for stability on PJRT sessions where multi-process TPU init can fail.
+- You can still force spawn manually with `--set runtime.use_xla_spawn=true`.

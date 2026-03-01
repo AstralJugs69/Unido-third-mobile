@@ -1,7 +1,7 @@
 runtime:
   mode: xla
   use_bf16: true
-  use_xla_spawn: true
+  use_xla_spawn: false
   xla_spawn_start_method: spawn
 training:
   num_workers: 8
