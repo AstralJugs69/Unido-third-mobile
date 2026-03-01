@@ -210,12 +210,19 @@ def train_main(
     resume_ckpt = cfg["training"].get("checkpoint")
     if resume_ckpt:
         if Path(resume_ckpt).exists():
-            resume_meta = load_resume_checkpoint(model, optimizer, resume_ckpt, device)
+            resume_optimizer = bool(cfg["training"].get("resume_optimizer", False))
+            resume_meta = load_resume_checkpoint(model, optimizer, resume_ckpt, device, load_optimizer=resume_optimizer)
             start_epoch = resume_meta["epoch"] + 1
             best_score = resume_meta["best_score"]
             if resume_meta["m_stats"] is not None:
                 m_stats = resume_meta["m_stats"]
-            logging.info("Resumed training from %s at epoch %d (best=%.6f)", resume_ckpt, resume_meta["epoch"], best_score)
+            logging.info(
+                "Resumed training from %s at epoch %d (best=%.6f, resume_optimizer=%s)",
+                resume_ckpt,
+                resume_meta["epoch"],
+                best_score,
+                resume_optimizer,
+            )
         else:
             logging.warning("Resume checkpoint not found: %s. Starting from scratch/warm-start.", resume_ckpt)
             resume_ckpt = None

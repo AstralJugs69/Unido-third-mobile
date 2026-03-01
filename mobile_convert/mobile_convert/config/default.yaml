@@ -24,6 +24,7 @@ training:
   grad_accum: 2
   num_workers: 2
   checkpoint: null
+  resume_optimizer: false
   teacher_checkpoint: ultimate_tiled_multitask.pth
   use_uncertainty_weighting: true
   use_gradnorm: false

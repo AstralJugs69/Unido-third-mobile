@@ -47,12 +47,18 @@ def load_warmstart(model: torch.nn.Module, checkpoint_path: str) -> bool:
     return True
 
 
-def load_resume_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, checkpoint_path: str, device: torch.device) -> dict:
+def load_resume_checkpoint(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    checkpoint_path: str,
+    device: torch.device,
+    load_optimizer: bool = False,
+) -> dict:
     # Always load via CPU to avoid backend-tag restore errors (e.g. xla:0 tags).
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     model.load_state_dict(ckpt["model"], strict=False)
 
-    if "optimizer" in ckpt:
+    if load_optimizer and "optimizer" in ckpt:
         try:
             optimizer.load_state_dict(ckpt["optimizer"])
         except Exception as exc:

@@ -47,6 +47,7 @@ fi
 echo "Resuming from: ${LATEST_CKPT}"; \
 bash mobile_convert/scripts/kaggle_train_export.sh \
   --set training.checkpoint="${LATEST_CKPT}" \
+  --set training.resume_optimizer=false \
   --set training.epochs=30
 ```
 
