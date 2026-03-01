@@ -19,6 +19,7 @@ tiling:
 training:
   seed: 42
   epochs: 12
+  eval_every_n_epochs: 2
   warmup_head_epochs: 2
   batch_size: 2
   grad_accum: 2

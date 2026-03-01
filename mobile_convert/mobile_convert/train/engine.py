@@ -216,6 +216,7 @@ def train_main(
 
     use_bf16 = bool(cfg["runtime"].get("use_bf16", False)) and device.type in {"cuda", "xla"}
     grad_accum = int(cfg["training"]["grad_accum"])
+    eval_every = max(1, int(cfg["training"].get("eval_every_n_epochs", 1)))
     grad_clip_norm = float(cfg["training"].get("grad_clip_norm", 0.0))
     warmup_epochs = int(cfg["training"].get("warmup_head_epochs", 0))
     scale = float(cfg["model"]["scale"])
@@ -315,24 +316,32 @@ def train_main(
         if world_size > 1:
             _xla_rendezvous(f"epoch_{epoch}_train_end")
 
+        # Always save last checkpoint for resume safety, even on non-eval epochs.
         if is_master:
-            eval_metrics = evaluate(model, val_loader, device, scale, m_stats)
-            score = float(eval_metrics["total_mae"])
-            is_best = score < best_score
-            if is_best:
-                best_score = score
-                save_checkpoint(run_dir / "best.ckpt", model, optimizer, epoch, best_score, m_stats)
             save_checkpoint(run_dir / "last.ckpt", model, optimizer, epoch, best_score, m_stats)
 
-            record = {"epoch": epoch, "best": is_best, **eval_metrics}
-            with open(metrics_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record) + "\n")
+        should_eval = (epoch % eval_every == 0) or (epoch == total_epochs)
 
+        if is_master:
             avg_train_loss = epoch_loss_sum / max(1, epoch_loss_count)
             current_lr = float(optimizer.param_groups[0]["lr"])
-            logging.info("Epoch=%d train_loss=%.6f lr=%.8f total_mae=%.6f best=%.6f", epoch, avg_train_loss, current_lr, score, best_score)
+            if should_eval:
+                eval_metrics = evaluate(model, val_loader, device, scale, m_stats)
+                score = float(eval_metrics["total_mae"])
+                is_best = score < best_score
+                if is_best:
+                    best_score = score
+                    save_checkpoint(run_dir / "best.ckpt", model, optimizer, epoch, best_score, m_stats)
 
-        if world_size > 1:
+                record = {"epoch": epoch, "best": is_best, **eval_metrics}
+                with open(metrics_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(record) + "\n")
+
+                logging.info("Epoch=%d train_loss=%.6f lr=%.8f total_mae=%.6f best=%.6f", epoch, avg_train_loss, current_lr, score, best_score)
+            else:
+                logging.info("Epoch=%d train_loss=%.6f lr=%.8f (eval skipped, every %d epochs)", epoch, avg_train_loss, current_lr, eval_every)
+
+        if world_size > 1 and should_eval:
             _xla_rendezvous(f"epoch_{epoch}_eval_end")
 
     if is_master:
