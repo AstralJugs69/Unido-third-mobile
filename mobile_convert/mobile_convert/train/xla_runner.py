@@ -21,9 +21,8 @@ def resolve_device(mode: str) -> torch.device:
             import torch_xla.core.xla_model as xm  # type: ignore
 
             return xm.xla_device()
-        except Exception:
-            logging.warning("XLA requested but unavailable. Falling back to CUDA/CPU.")
-            return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        except Exception as exc:
+            raise RuntimeError(f"XLA requested but unavailable: {exc}") from exc
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -63,12 +62,9 @@ def _xla_mp_worker(_index: int, cfg_local: dict, run_dir_str: str, result_file_s
 
 def _run_xla_spawn(cfg: dict, run_dir: Path, start_method: str = "spawn"):
     try:
-        import torch_xla.core.xla_model as xm  # type: ignore
         import torch_xla.distributed.xla_multiprocessing as xmp  # type: ignore
-    except Exception:
-        logging.warning("torch_xla unavailable. Falling back to CUDA/CPU.")
-        device = resolve_device("auto")
-        return train_main(cfg, run_dir, device)
+    except Exception as exc:
+        raise RuntimeError(f"torch_xla spawn unavailable: {exc}") from exc
 
     result_file = run_dir / "xla_train_result.json"
 
