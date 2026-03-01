@@ -25,6 +25,7 @@ def _export_with_dynamo(
         output_names=["counts", "measures"],
         opset_version=opset,
         dynamo=True,
+        external_data=False,
     )
     if dynamic_batch:
         # Preferred shape specification for dynamo exporter.
@@ -57,6 +58,7 @@ def _export_with_legacy(
         dynamic_axes=dynamic_axes,
         opset_version=opset,
         dynamo=False,
+        external_data=False,
     )
 
 
