@@ -59,7 +59,7 @@ def _xla_mp_worker(_index: int, cfg_local: dict, run_dir_str: str, result_file_s
         _dump_xla_metrics(Path(run_dir_str))
 
 
-def _run_xla_spawn(cfg: dict, run_dir: Path):
+def _run_xla_spawn(cfg: dict, run_dir: Path, start_method: str = "spawn"):
     try:
         import torch_xla.core.xla_model as xm  # type: ignore
         import torch_xla.distributed.xla_multiprocessing as xmp  # type: ignore
@@ -72,7 +72,7 @@ def _run_xla_spawn(cfg: dict, run_dir: Path):
 
     # Under PJRT in managed notebook environments (e.g. Kaggle), forcing device
     # count via env vars can break TPU initialization. Let PJRT discover devices.
-    xmp.spawn(_xla_mp_worker, args=(cfg, str(run_dir), str(result_file)), nprocs=None, start_method="fork")
+    xmp.spawn(_xla_mp_worker, args=(cfg, str(run_dir), str(result_file)), nprocs=None, start_method=start_method)
 
     if result_file.exists():
         return json.loads(result_file.read_text(encoding="utf-8"))
@@ -84,10 +84,11 @@ def run_training(cfg: dict, run_dir):
     mode = cfg.get("runtime", {}).get("mode", "auto").lower()
     if mode == "xla":
         use_spawn = bool(cfg.get("runtime", {}).get("use_xla_spawn", True))
+        spawn_method = str(cfg.get("runtime", {}).get("xla_spawn_start_method", "spawn"))
         if use_spawn:
-            logging.info("Using XLA spawn mode")
+            logging.info("Using XLA spawn mode (start_method=%s)", spawn_method)
             try:
-                return _run_xla_spawn(cfg, Path(run_dir))
+                return _run_xla_spawn(cfg, Path(run_dir), start_method=spawn_method)
             except Exception as exc:
                 logging.warning("XLA spawn failed (%s). Falling back to single-process XLA.", exc)
 

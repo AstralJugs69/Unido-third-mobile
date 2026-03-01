@@ -105,15 +105,15 @@ def evaluate(model: UltimateSpecialist, loader: DataLoader, device: torch.device
     measure_errs = []
     with torch.no_grad():
         for stack, meta, counts, measures, _, _ in loader:
-            stack, meta = stack.to(device), meta.to(device)
+            stack, meta = _maybe_to_device(stack, device), _maybe_to_device(meta, device)
             p_c, p_m = model(stack, meta)
 
             p_c = p_c.cpu().numpy() / scale
-            counts_np = counts.numpy()
+            counts_np = counts.detach().cpu().numpy()
             count_errs.append(np.abs(p_c - counts_np))
 
             p_m = p_m.cpu().numpy() * (m_stats[1] + 1e-8) + m_stats[0]
-            m_np = measures.numpy() * (m_stats[1] + 1e-8) + m_stats[0]
+            m_np = measures.detach().cpu().numpy() * (m_stats[1] + 1e-8) + m_stats[0]
             measure_errs.append(np.abs(p_m - m_np))
 
     c_err = np.concatenate(count_errs)
@@ -159,6 +159,14 @@ def _xla_rendezvous(tag: str):
         pass
 
 
+def _maybe_to_device(t: torch.Tensor, device: torch.device) -> torch.Tensor:
+    if not isinstance(t, torch.Tensor):
+        return t
+    if t.device == device:
+        return t
+    return t.to(device)
+
+
 def _optimizer_step(device: torch.device, optimizer: torch.optim.Optimizer) -> None:
     if device.type == "xla":
         try:
@@ -188,34 +196,46 @@ def train_main(
         distributed=distributed,
     )
 
+    if device.type == "xla":
+        try:
+            import torch_xla.distributed.parallel_loader as pl  # type: ignore
+
+            train_loader = pl.MpDeviceLoader(train_loader, device)
+            val_loader = pl.MpDeviceLoader(val_loader, device)
+        except Exception as exc:
+            logging.warning("Could not enable XLA MpDeviceLoader: %s", exc)
+
     model = _build_model(cfg, device)
     count_weights = torch.tensor([1.0, 1.5, 1.5, 0.5, 1.5, 2.0, 1.0, 1.0, 1.0], dtype=torch.float32, device=device)
     count_weights = count_weights / count_weights.mean()
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(cfg["optimizer"]["lr"]), weight_decay=float(cfg["optimizer"]["weight_decay"]))
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=int(cfg["scheduler"]["t_max"]))
 
     l1 = nn.L1Loss()
     uncertainty = MultiTaskUncertaintyLoss().to(device)
 
     use_bf16 = bool(cfg["runtime"].get("use_bf16", False)) and device.type in {"cuda", "xla"}
     grad_accum = int(cfg["training"]["grad_accum"])
+    grad_clip_norm = float(cfg["training"].get("grad_clip_norm", 0.0))
     warmup_epochs = int(cfg["training"].get("warmup_head_epochs", 0))
     scale = float(cfg["model"]["scale"])
 
     metrics_path = run_dir / "metrics.jsonl"
     best_score = float("inf")
     start_epoch = 1
+    total_epochs = int(cfg["training"]["epochs"])
+    resume_optimizer = bool(cfg["training"].get("resume_optimizer", False))
+    resumed = False
 
     resume_ckpt = cfg["training"].get("checkpoint")
     if resume_ckpt:
         if Path(resume_ckpt).exists():
-            resume_optimizer = bool(cfg["training"].get("resume_optimizer", False))
             resume_meta = load_resume_checkpoint(model, optimizer, resume_ckpt, device, load_optimizer=resume_optimizer)
             start_epoch = resume_meta["epoch"] + 1
             best_score = resume_meta["best_score"]
             if resume_meta["m_stats"] is not None:
                 m_stats = resume_meta["m_stats"]
+            resumed = True
             logging.info(
                 "Resumed training from %s at epoch %d (best=%.6f, resume_optimizer=%s)",
                 resume_ckpt,
@@ -232,7 +252,22 @@ def train_main(
         if teacher_ckpt:
             load_warmstart(model, teacher_ckpt)
 
-    total_epochs = int(cfg["training"]["epochs"])
+    if resumed and not resume_optimizer:
+        resume_lr = float(cfg["training"].get("resume_lr", cfg["optimizer"]["lr"]))
+        for pg in optimizer.param_groups:
+            pg["lr"] = resume_lr
+        scheduler_tmax = max(1, total_epochs - start_epoch + 1)
+        logging.info("Resume fine-tune LR set to %.8f with cosine T_max=%d", resume_lr, scheduler_tmax)
+    else:
+        scheduler_tmax = int(cfg["scheduler"]["t_max"])
+
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=scheduler_tmax)
+
+    if resumed and resume_optimizer and start_epoch > 1:
+        # Align scheduler state with resumed epoch when optimizer state was restored.
+        for _ in range(start_epoch - 1):
+            scheduler.step()
+
     if start_epoch > total_epochs:
         logging.info("Resume epoch (%d) already beyond requested total epochs (%d). Skipping training loop.", start_epoch, total_epochs)
 
@@ -245,11 +280,13 @@ def train_main(
         model.train()
         optimizer.zero_grad(set_to_none=True)
         loop = tqdm(train_loader, desc=f"Epoch {epoch} [rank {rank}]", leave=False, disable=not is_master)
+        epoch_loss_sum = 0.0
+        epoch_loss_count = 0
         for step, (stack, meta, counts, measures, _, _) in enumerate(loop, start=1):
-            stack = stack.to(device)
-            meta = meta.to(device)
-            counts = counts.to(device)
-            measures = measures.to(device)
+            stack = _maybe_to_device(stack, device)
+            meta = _maybe_to_device(meta, device)
+            counts = _maybe_to_device(counts, device)
+            measures = _maybe_to_device(measures, device)
 
             with _amp_context(device, use_bf16):
                 p_c, p_m = model(stack, meta)
@@ -263,7 +300,11 @@ def train_main(
                     loss = 1.5 * loss_c + 0.1 * loss_m + 0.5 * loss_cons
 
             loss.backward()
+            epoch_loss_sum += float(loss.detach().cpu().item())
+            epoch_loss_count += 1
             if step % grad_accum == 0:
+                if grad_clip_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
                 _optimizer_step(device, optimizer)
                 optimizer.zero_grad(set_to_none=True)
 
@@ -271,7 +312,8 @@ def train_main(
                 _xla_mark_step()
 
         scheduler.step()
-        _xla_rendezvous(f"epoch_{epoch}_train_end")
+        if world_size > 1:
+            _xla_rendezvous(f"epoch_{epoch}_train_end")
 
         if is_master:
             eval_metrics = evaluate(model, val_loader, device, scale, m_stats)
@@ -286,9 +328,12 @@ def train_main(
             with open(metrics_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record) + "\n")
 
-            logging.info("Epoch=%d total_mae=%.6f best=%.6f", epoch, score, best_score)
+            avg_train_loss = epoch_loss_sum / max(1, epoch_loss_count)
+            current_lr = float(optimizer.param_groups[0]["lr"])
+            logging.info("Epoch=%d train_loss=%.6f lr=%.8f total_mae=%.6f best=%.6f", epoch, avg_train_loss, current_lr, score, best_score)
 
-        _xla_rendezvous(f"epoch_{epoch}_eval_end")
+        if world_size > 1:
+            _xla_rendezvous(f"epoch_{epoch}_eval_end")
 
     if is_master:
         best_metrics = evaluate(model, val_loader, device, scale, m_stats)
