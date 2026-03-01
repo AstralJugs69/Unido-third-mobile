@@ -30,3 +30,20 @@ def load_warmstart(model: torch.nn.Module, checkpoint_path: str) -> bool:
     logging.info("Warm-start loaded from %s", checkpoint_path)
     logging.info("Missing keys: %d | Unexpected keys: %d", len(missing), len(unexpected))
     return True
+
+
+def load_resume_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, checkpoint_path: str, device: torch.device) -> dict:
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    model.load_state_dict(ckpt["model"], strict=False)
+
+    if "optimizer" in ckpt:
+        try:
+            optimizer.load_state_dict(ckpt["optimizer"])
+        except Exception as exc:
+            logging.warning("Could not load optimizer state from resume checkpoint: %s", exc)
+
+    return {
+        "epoch": int(ckpt.get("epoch", 0)),
+        "best_score": float(ckpt.get("best_score", float("inf"))),
+        "m_stats": ckpt.get("m_stats"),
+    }

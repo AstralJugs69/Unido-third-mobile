@@ -40,6 +40,16 @@ fi
   --set tiling.grid_cols=7
 ```
 
+### Resume a stopped run to a higher epoch target
+```bash
+%cd /kaggle/working/Unido-third-mobile
+!LATEST_CKPT=$(ls -1dt mobile_convert/runs/* 2>/dev/null | head -n 1)/last.ckpt; \
+echo "Resuming from: ${LATEST_CKPT}"; \
+bash mobile_convert/scripts/kaggle_train_export.sh \
+  --set training.checkpoint="${LATEST_CKPT}" \
+  --set training.epochs=30
+```
+
 ## CLI commands
 
 ```bash

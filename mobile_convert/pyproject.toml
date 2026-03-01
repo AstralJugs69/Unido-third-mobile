@@ -21,6 +21,7 @@ dependencies = [
   "rich>=13.7",
   "PyYAML>=6.0.1",
   "onnx>=1.16",
+  "onnxscript>=0.1.0",
   "onnxruntime>=1.18",
   "onnxconverter-common>=1.14.0"
 ]

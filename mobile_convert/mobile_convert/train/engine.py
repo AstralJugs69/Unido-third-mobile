@@ -19,7 +19,7 @@ from mobile_convert.data.schema import COUNT_COLS, MEASURE_COLS, assert_schema
 from mobile_convert.eval.metrics import mae_per_target, total_mae
 from mobile_convert.models.architecture import UltimateSpecialist
 from mobile_convert.models.losses import MultiTaskUncertaintyLoss, consistency_loss, weighted_count_loss
-from mobile_convert.train.checkpointing import load_warmstart, save_checkpoint
+from mobile_convert.train.checkpointing import load_resume_checkpoint, load_warmstart, save_checkpoint
 from mobile_convert.utils.io import write_json
 
 
@@ -189,10 +189,6 @@ def train_main(
     )
 
     model = _build_model(cfg, device)
-    teacher_ckpt = cfg["training"].get("teacher_checkpoint")
-    if teacher_ckpt:
-        load_warmstart(model, teacher_ckpt)
-
     count_weights = torch.tensor([1.0, 1.5, 1.5, 0.5, 1.5, 2.0, 1.0, 1.0, 1.0], dtype=torch.float32, device=device)
     count_weights = count_weights / count_weights.mean()
 
@@ -209,8 +205,31 @@ def train_main(
 
     metrics_path = run_dir / "metrics.jsonl"
     best_score = float("inf")
+    start_epoch = 1
 
-    for epoch in range(1, int(cfg["training"]["epochs"]) + 1):
+    resume_ckpt = cfg["training"].get("checkpoint")
+    if resume_ckpt:
+        if Path(resume_ckpt).exists():
+            resume_meta = load_resume_checkpoint(model, optimizer, resume_ckpt, device)
+            start_epoch = resume_meta["epoch"] + 1
+            best_score = resume_meta["best_score"]
+            if resume_meta["m_stats"] is not None:
+                m_stats = resume_meta["m_stats"]
+            logging.info("Resumed training from %s at epoch %d (best=%.6f)", resume_ckpt, resume_meta["epoch"], best_score)
+        else:
+            logging.warning("Resume checkpoint not found: %s. Starting from scratch/warm-start.", resume_ckpt)
+            resume_ckpt = None
+
+    if not resume_ckpt:
+        teacher_ckpt = cfg["training"].get("teacher_checkpoint")
+        if teacher_ckpt:
+            load_warmstart(model, teacher_ckpt)
+
+    total_epochs = int(cfg["training"]["epochs"])
+    if start_epoch > total_epochs:
+        logging.info("Resume epoch (%d) already beyond requested total epochs (%d). Skipping training loop.", start_epoch, total_epochs)
+
+    for epoch in range(start_epoch, total_epochs + 1):
         if train_sampler is not None:
             train_sampler.set_epoch(epoch)
 
