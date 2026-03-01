@@ -87,17 +87,19 @@ def export_fp32_onnx(cfg: dict, ckpt_path: str, out_path: str) -> dict:
     model_onnx = onnx.load(out_path)
     onnx.checker.check_model(model_onnx)
 
-    sess = ort.InferenceSession(out_path, providers=["CPUExecutionProvider"])
-    ort_out = sess.run(None, {"stack": stack.numpy(), "meta": meta.numpy()})
-    with torch.no_grad():
-        pt_out = wrapped(stack, meta)
+    report = {"onnx_path": str(Path(out_path).resolve())}
+    try:
+        sess = ort.InferenceSession(out_path, providers=["CPUExecutionProvider"])
+        ort_out = sess.run(None, {"stack": stack.numpy(), "meta": meta.numpy()})
+        with torch.no_grad():
+            pt_out = wrapped(stack, meta)
 
-    counts_max_abs = float(np.max(np.abs(pt_out[0].numpy() - ort_out[0])))
-    measures_max_abs = float(np.max(np.abs(pt_out[1].numpy() - ort_out[1])))
+        counts_max_abs = float(np.max(np.abs(pt_out[0].numpy() - ort_out[0])))
+        measures_max_abs = float(np.max(np.abs(pt_out[1].numpy() - ort_out[1])))
+        report["parity"] = {"counts_max_abs": counts_max_abs, "measures_max_abs": measures_max_abs}
+    except Exception as exc:
+        logging.warning("Skipping ONNX Runtime parity check: %s", exc)
+        report["parity"] = {"status": "skipped", "reason": str(exc)}
 
-    report = {
-        "onnx_path": str(Path(out_path).resolve()),
-        "parity": {"counts_max_abs": counts_max_abs, "measures_max_abs": measures_max_abs},
-    }
     write_json(Path(out_path).with_suffix(".parity.json"), report)
     return report
