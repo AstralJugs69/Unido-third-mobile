@@ -1,8 +1,8 @@
 runtime:
   mode: xla
   use_bf16: true
-  use_xla_spawn: false
-  xla_spawn_start_method: spawn
+  use_xla_spawn: true
+  xla_spawn_start_method: fork
 training:
   num_workers: 8
   batch_size: 2

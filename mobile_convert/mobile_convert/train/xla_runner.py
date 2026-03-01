@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 from pathlib import Path
 
 import torch
@@ -37,11 +38,12 @@ def _dump_xla_metrics(run_dir: Path) -> None:
 
 def _xla_mp_worker(_index: int, cfg_local: dict, run_dir_str: str, result_file_str: str):
     import torch_xla.core.xla_model as xm  # type: ignore
+    import torch_xla.runtime as xr  # type: ignore
 
     device = xm.xla_device()
-    rank = xm.get_ordinal()
-    world_size = xm.xrt_world_size()
-    is_master = xm.is_master_ordinal()
+    rank = int(xr.global_ordinal())
+    world_size = int(xr.world_size())
+    is_master = rank == 0
 
     result = train_main(
         cfg_local,
@@ -83,6 +85,14 @@ def _run_xla_spawn(cfg: dict, run_dir: Path, start_method: str = "spawn"):
 def run_training(cfg: dict, run_dir):
     mode = cfg.get("runtime", {}).get("mode", "auto").lower()
     if mode == "xla":
+        # Must be set before torch_xla runtime initialization in this process.
+        os.environ["PJRT_DEVICE"] = "TPU"
+        # Defensive cleanup for known bad notebook env contamination.
+        for key in ("TPU_PROCESS_ADDRESSES", "CLOUD_TPU_TASK_ID"):
+            os.environ.pop(key, None)
+        if "TPU_WORKER_HOSTNAMES" in os.environ and "WARNING" in os.environ["TPU_WORKER_HOSTNAMES"]:
+            os.environ.pop("TPU_WORKER_HOSTNAMES", None)
+
         use_spawn = bool(cfg.get("runtime", {}).get("use_xla_spawn", True))
         spawn_method = str(cfg.get("runtime", {}).get("xla_spawn_start_method", "spawn"))
         if use_spawn:

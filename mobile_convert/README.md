@@ -75,5 +75,5 @@ python -m mobile_convert.cli run-core --config mobile_convert/mobile_convert/con
 
 - Core scope includes: warm-start student training, eval gates, ONNX FP32/FP16, ORT benchmark.
 - `quantize-int8` is intentionally a stub in this phase.
-- Kaggle preset uses single-process XLA by default for stability on PJRT sessions where multi-process TPU init can fail.
-- You can still force spawn manually with `--set runtime.use_xla_spawn=true`.
+- Kaggle preset attempts XLA spawn with `fork`; if spawn fails, it automatically falls back to single-process XLA.
+- Avoid running standalone TPU/XLA probe cells before training in the same runtime, as early runtime init can break spawn.

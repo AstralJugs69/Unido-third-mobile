@@ -6,6 +6,14 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "${REPO_ROOT}"
 
+# TPU runtime env must be initialized before Python imports torch_xla.
+export PJRT_DEVICE=TPU
+unset TPU_PROCESS_ADDRESSES || true
+unset CLOUD_TPU_TASK_ID || true
+if [[ "${TPU_WORKER_HOSTNAMES:-}" == *"WARNING"* ]]; then
+  unset TPU_WORKER_HOSTNAMES || true
+fi
+
 # Ensure teacher checkpoint exists for warm-start.
 if [ ! -f "${REPO_ROOT}/ultimate_tiled_multitask.pth" ]; then
   echo "[mobile_convert] Teacher checkpoint missing. Downloading..."
